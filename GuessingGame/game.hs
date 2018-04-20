@@ -1,0 +1,123 @@
+import Data.Foldable
+
+guessWord :: String
+guessWord = "steve"
+
+placeholder::String
+placeholder = "#"
+
+main :: IO ()
+main = do
+
+     putStrLn $ "\nType in a letter or take a guess! You have "
+              ++ (show guessLetters) ++ " attempts (type :q to quit).\n"
+
+     printResult =<< foldlM (\acc x ->
+
+              let step = acc <+ x
+                  message = getStepString step in
+               do putStrLn $ message ++ (show step) ++ "\n"
+                  return step) (generateGuessWord guessWord [])
+       
+       . takeWhilePlus guessHasEmptyPlaces
+       . map (\x -> if x == guessWord then fillOut x else processSingleGuess x)
+       . takeWhile (/=":q")
+       . take guessLetters
+       . lines =<< getContents
+
+     putStrLn "Thank you for playing!\n"
+
+     where guessLetters = getNumOfLetters guessWord
+
+data Letter = Letter Char | Empty deriving (Eq, Show)
+
+data GuessWord = GuessWord [Letter] Bool deriving (Eq)
+
+instance Show GuessWord where
+  show (GuessWord [] _)       = "Empty."
+  show (GuessWord ((Letter x):xs) _)
+         | length xs > 0      = x:' ':(show (GuessWord xs True))
+         | otherwise          = [x]
+  show (GuessWord (Empty:xs) _)
+         | length xs > 0      = placeholder ++ ' ':(show (GuessWord xs True))
+         | otherwise          = placeholder
+
+getNumOfLetters :: String -> Int
+getNumOfLetters string = length result
+  where result = foldl (\acc x -> if (x `elem` acc) then acc else x:acc) [] string
+
+getAllPositions :: Char -> String -> [Int]
+getAllPositions c str = foldr (\x acc -> if (c == (snd x))
+                                         then
+                                           (fst x):acc
+                                         else acc)
+                              [] (zip [0..] str)
+
+generateGuessWord :: String -> [Int] -> GuessWord
+generateGuessWord word list = GuessWord ( foldr (\x acc -> if (fst x `elem` list)
+                                                           then
+                                                             Letter (snd x):acc
+                                                           else
+                                                             Empty:acc)
+                                                [] (zip [0..] word) )
+                                        ( length list /= 0 )
+
+processGuess :: [String] -> [GuessWord]
+processGuess list = map (\x -> processSingleGuess x) list
+
+processSingleGuess :: String -> GuessWord
+processSingleGuess [] = GuessWord [] False
+processSingleGuess (x:xs) = let guessChar = x
+                                fills = getAllPositions guessChar guessWord in
+                                generateGuessWord guessWord fills
+
+(<+) :: GuessWord -> GuessWord -> GuessWord
+(<+) (GuessWord word1 guess1)
+     (GuessWord word2 guess2) = GuessWord ( map (\x -> (fst x) <> (snd x))
+                                              (zip word1 word2) ) guess2
+
+(<>) :: Letter -> Letter -> Letter
+(<>) (Letter c) Empty = Letter c
+(<>) Empty (Letter c) = Letter c
+(<>) Empty Empty = Empty
+(<>) (Letter c) (Letter d) = Letter c
+
+guessHasEmptyPlaces :: GuessWord -> Bool
+guessHasEmptyPlaces (GuessWord letters _) = foldr (\x acc -> if (acc == True)
+                                                             then
+                                                               True
+                                                             else
+                                                               isEmptyLetter x)
+                                                  False letters
+isEmptyLetter :: Letter -> Bool
+isEmptyLetter Empty = True
+isEmptyLetter _ = False
+
+isMissGuess :: GuessWord -> Bool
+isMissGuess (GuessWord _ truth) = not truth
+
+getStepString :: GuessWord -> String
+getStepString guess = if not $ isMissGuess guess
+                      then
+                        "\nCool! " ++ residue
+                      else
+                        "\nDarn! " ++ residue
+                      where residue = "Try a new letter or take a guess!\n\n"
+
+fillOut :: String -> GuessWord
+fillOut string = GuessWord (map (\x -> (Letter x)) string) True
+
+printResult :: GuessWord -> IO ()
+printResult guess = if not $ guessHasEmptyPlaces guess
+                    then do
+                      putStrLn "You won!\n"
+                    else do
+                      putStrLn "You lost!\n"
+
+takeWhilePlus :: (a->Bool)->[a]->[a]
+takeWhilePlus f list = (fst result) ++ customHead (snd result)
+                       where result = span f list
+
+customHead :: [a] -> [a]
+customHead [] = []
+customHead (x:xs) = [x]
