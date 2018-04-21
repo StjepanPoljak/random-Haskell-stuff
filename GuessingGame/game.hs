@@ -1,9 +1,6 @@
 import Data.Foldable
 import System.Process
 
-guessWord :: String
-guessWord = "pandica"
-
 placeholder::String
 placeholder = "#"
 
@@ -193,6 +190,9 @@ readFromTerminal string = foldr (\x acc -> if isNumeric x
                                            then
                                              (acc + (read [x])) * 10
                                            else acc) 0 string
+
+guessWord :: String
+guessWord = "haskell"
 
 putChars :: Int -> Char -> String
 putChars rep char
