@@ -1,16 +1,43 @@
 import Data.Foldable
+import System.Process
 
 guessWord :: String
-guessWord = "steve"
+guessWord = "interstellar"
 
 placeholder::String
 placeholder = "#"
 
+centerString :: String -> Int -> String
+centerString string cols = (putChars ((cols - (length string)) `div` 2) ' ')
+                           ++ string
+
+isNumeric :: Char -> Bool
+isNumeric char = char `elem` "0123456789"
+
+readFromTerminal :: String -> Int
+readFromTerminal string = foldr (\x acc -> if isNumeric x
+                                           then
+                                             (acc + (read [x])) * 10
+                                           else acc) 0 string
+
+putChars :: Int -> Char -> String
+putChars rep char
+      | rep > 0         = char:putChars (rep - 1) char
+      | rep == 0        = ""
+      | otherwise       = putChars (-rep) char
+
 main :: IO ()
 main = do
 
-     putStrLn $ "\nType in a letter or take a guess! You have "
+     columnsRaw <- readProcess "tput" ["cols"] []
+     let columns = readFromTerminal columnsRaw
+
+     putStrLn $ "\n\ESC[2J\ESC[0;0H\n\ESC[1m" ++ (centerString "The Grand Haskell Guessing Game" columns) ++ "\ESC[m"
+     putStrLn (centerString "by Stjepan Poljak" columns)
+
+     putStrLn $ "\nType in a letter or take a guess!\nYou have "
               ++ (show guessLetters) ++ " attempts (type :q to quit).\n"
+
 
      printResult =<< foldlM (\acc x ->
 
