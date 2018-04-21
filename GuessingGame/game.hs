@@ -14,11 +14,14 @@ main = do
 
      printResult =<< foldlM (\acc x ->
 
-              let step = acc <+ x
-                  message = getStepString step in
-               do putStrLn $ message ++ (show step) ++ "\n"
-                  return step) (generateGuessWord guessWord [])
+              let step = (snd acc) <+ (snd x)
+                  message = getStepString step (fst x) guessLetters in
+               do putStrLn message
+                  return $ acc +! (1, step))
+
+              ((0, guessLetters), (generateGuessWord guessWord []))
        
+       . zip [0..]
        . takeWhilePlus guessHasEmptyPlaces
        . map (\x -> if x == guessWord then fillOut x else processSingleGuess x)
        . takeWhile (/=":q")
@@ -82,6 +85,9 @@ processSingleGuess (x:xs) = let guessChar = x
 (<>) Empty Empty = Empty
 (<>) (Letter c) (Letter d) = Letter c
 
+(+!) :: ((Int,Int), a) -> (Int, a) -> ((Int,Int), a)
+((first, second), a) +! (number, b) = ((first + number, second), b)
+
 guessHasEmptyPlaces :: GuessWord -> Bool
 guessHasEmptyPlaces (GuessWord letters _) = foldr (\x acc -> if (acc == True)
                                                              then
@@ -96,23 +102,41 @@ isEmptyLetter _ = False
 isMissGuess :: GuessWord -> Bool
 isMissGuess (GuessWord _ truth) = not truth
 
-getStepString :: GuessWord -> String
-getStepString guess = if not $ isMissGuess guess
-                      then
-                        "\nCool! " ++ residue
-                      else
-                        "\nDarn! " ++ residue
-                      where residue = "Try a new letter or take a guess!\n\n"
+getNormalString :: GuessWord -> String
+getNormalString guess = if not $ isMissGuess guess
+                        then
+                          "\nCool! " ++ residue
+                        else
+                          "\nDarn! " ++ residue
+                        where residue = "Try a new letter " ++
+                                        "or take a guess!\n\n" ++
+                                        show (guess) ++ "\n"
+
+-- current guess, current line and total lines --
+getStepString :: GuessWord -> Int -> Int -> String
+getStepString guess curr total = if curr < (total - 1)
+                                    && (not $ guessHasEmptyPlaces guess)
+                                 then
+                                   "\nWow! Congrats!\n"
+                                 else
+                                   getNormalString guess
 
 fillOut :: String -> GuessWord
 fillOut string = GuessWord (map (\x -> (Letter x)) string) True
 
-printResult :: GuessWord -> IO ()
-printResult guess = if not $ guessHasEmptyPlaces guess
-                    then do
-                      putStrLn "You won!\n"
-                    else do
-                      putStrLn "You lost!\n"
+printNormalResult :: GuessWord -> IO ()
+printNormalResult guess = if not $ guessHasEmptyPlaces guess
+                          then do
+                            putStrLn "You won!\n"
+                          else do
+                            putStrLn "You lost!\n"
+
+printResult :: ((Int, Int), GuessWord) -> IO ()
+printResult ((curr, total), guess) = if curr < (total - 1)
+                                        && guessHasEmptyPlaces guess
+                                     then
+                                       putStrLn "\nYou quit! Why?\n"
+                                     else printNormalResult guess
 
 takeWhilePlus :: (a->Bool)->[a]->[a]
 takeWhilePlus f list = (fst result) ++ customHead (snd result)
