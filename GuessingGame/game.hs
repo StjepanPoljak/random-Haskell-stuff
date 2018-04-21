@@ -2,48 +2,41 @@ import Data.Foldable
 import System.Process
 
 guessWord :: String
-guessWord = "interstellar"
+guessWord = "pandica"
 
 placeholder::String
 placeholder = "#"
 
-centerString :: String -> Int -> String
-centerString string cols = (putChars ((cols - (length string)) `div` 2) ' ')
-                           ++ string
-
-isNumeric :: Char -> Bool
-isNumeric char = char `elem` "0123456789"
-
-readFromTerminal :: String -> Int
-readFromTerminal string = foldr (\x acc -> if isNumeric x
-                                           then
-                                             (acc + (read [x])) * 10
-                                           else acc) 0 string
-
-putChars :: Int -> Char -> String
-putChars rep char
-      | rep > 0         = char:putChars (rep - 1) char
-      | rep == 0        = ""
-      | otherwise       = putChars (-rep) char
-
 main :: IO ()
 main = do
 
-     columnsRaw <- readProcess "tput" ["cols"] []
-     let columns = readFromTerminal columnsRaw
+     printHeader
 
-     putStrLn $ "\n\ESC[2J\ESC[0;0H\n\ESC[1m" ++ (centerString "The Grand Haskell Guessing Game" columns) ++ "\ESC[m"
-     putStrLn (centerString "by Stjepan Poljak" columns)
+     columns <- getColumns
 
-     putStrLn $ "\nType in a letter or take a guess!\nYou have "
-              ++ (show guessLetters) ++ " attempts (type :q to quit).\n"
-
+     putStrLn ""
+     putStrLn $ centerString "Type in a letter or take a guess!" columns
+     putStrLn $ centerString ("You have "
+             ++ (show guessLetters)
+             ++ " attempts.") columns
+     putStrLn $ "\ESC[2m"
+             ++ (centerString "(type :q to quit)" columns)
+     putStrLn "\ESC[m"
 
      printResult =<< foldlM (\acc x ->
-
+              
               let step = (snd acc) <+ (snd x)
                   message = getStepString step (fst x) guessLetters in
-               do putStrLn message
+               do printHeader
+                  putStrLn ""
+                  putStrLn $ centerString message columns
+                  putStrLn $ centerString ("You have "
+                          ++ (show $ guessLetters - (fst $ fst acc) - 1)
+                          ++ " more attempts.") columns
+                  putStrLn $ "\ESC[2m"
+                          ++ (centerString "(type :q to quit)" columns)
+                  putStrLn "\ESC[m"
+                  putStrLn $ centerString (show step) columns
                   return $ acc +! (1, step))
 
               ((0, guessLetters), (generateGuessWord guessWord []))
@@ -55,7 +48,9 @@ main = do
        . take guessLetters
        . lines =<< getContents
 
-     putStrLn "Thank you for playing!\n"
+     putStrLn $ "\ESC[3m"
+             ++ (centerString "Thank you for playing!" columns)
+             ++ "\ESC[m\n"
 
      where guessLetters = getNumOfLetters guessWord
 
@@ -64,17 +59,18 @@ data Letter = Letter Char | Empty deriving (Eq, Show)
 data GuessWord = GuessWord [Letter] Bool deriving (Eq)
 
 instance Show GuessWord where
-  show (GuessWord [] _)       = "Empty."
+  show (GuessWord [] _)       = ""
   show (GuessWord ((Letter x):xs) _)
-         | length xs > 0      = x:' ':(show (GuessWord xs True))
+         | length xs > 0      = x:' ':show (GuessWord xs True)
          | otherwise          = [x]
   show (GuessWord (Empty:xs) _)
-         | length xs > 0      = placeholder ++ ' ':(show (GuessWord xs True))
+         | length xs > 0      = placeholder ++ ' ':show (GuessWord xs True)
          | otherwise          = placeholder
 
 getNumOfLetters :: String -> Int
 getNumOfLetters string = length result
-  where result = foldl (\acc x -> if (x `elem` acc) then acc else x:acc) [] string
+  where result = foldl (\acc x -> if x `elem` acc then acc else x:acc)
+                       [] string
 
 getAllPositions :: Char -> String -> [Int]
 getAllPositions c str = foldr (\x acc -> if (c == (snd x))
@@ -84,7 +80,7 @@ getAllPositions c str = foldr (\x acc -> if (c == (snd x))
                               [] (zip [0..] str)
 
 generateGuessWord :: String -> [Int] -> GuessWord
-generateGuessWord word list = GuessWord ( foldr (\x acc -> if (fst x `elem` list)
+generateGuessWord word list = GuessWord ( foldr (\x acc -> if fst x `elem` list
                                                            then
                                                              Letter (snd x):acc
                                                            else
@@ -107,10 +103,10 @@ processSingleGuess (x:xs) = let guessChar = x
                                               (zip word1 word2) ) guess2
 
 (<>) :: Letter -> Letter -> Letter
-(<>) (Letter c) Empty = Letter c
-(<>) Empty (Letter c) = Letter c
-(<>) Empty Empty = Empty
-(<>) (Letter c) (Letter d) = Letter c
+(Letter c) <> Empty = Letter c
+Empty <> (Letter c) = Letter c
+Empty <> Empty = Empty
+(Letter c) <> (Letter d) = Letter c
 
 (+!) :: ((Int,Int), a) -> (Int, a) -> ((Int,Int), a)
 ((first, second), a) +! (number, b) = ((first + number, second), b)
@@ -132,19 +128,18 @@ isMissGuess (GuessWord _ truth) = not truth
 getNormalString :: GuessWord -> String
 getNormalString guess = if not $ isMissGuess guess
                         then
-                          "\nCool! " ++ residue
+                          "Cool! " ++ residue
                         else
-                          "\nDarn! " ++ residue
+                          "Darn! " ++ residue
                         where residue = "Try a new letter " ++
-                                        "or take a guess!\n\n" ++
-                                        show (guess) ++ "\n"
+                                        "or take a guess!"
 
 -- current guess, current line and total lines --
 getStepString :: GuessWord -> Int -> Int -> String
 getStepString guess curr total = if curr < (total - 1)
                                     && (not $ guessHasEmptyPlaces guess)
                                  then
-                                   "\nWow! Congrats!\n"
+                                   "Wow! Congrats!"
                                  else
                                    getNormalString guess
 
@@ -154,16 +149,29 @@ fillOut string = GuessWord (map (\x -> (Letter x)) string) True
 printNormalResult :: GuessWord -> IO ()
 printNormalResult guess = if not $ guessHasEmptyPlaces guess
                           then do
-                            putStrLn "You won!\n"
+                            columns <- getColumns
+                            putStrLn $ "\n\ESC[1m"
+                                    ++ (centerString "You won!" columns)
+                                    ++ "\ESC[m"
                           else do
-                            putStrLn "You lost!\n"
+                            columns <- getColumns
+                            putStrLn $ "\n"
+                                    ++ (centerString "You lost!" columns)
+                                    ++ ""
 
 printResult :: ((Int, Int), GuessWord) -> IO ()
-printResult ((curr, total), guess) = if curr < (total - 1)
-                                        && guessHasEmptyPlaces guess
-                                     then
-                                       putStrLn "\nYou quit! Why?\n"
-                                     else printNormalResult guess
+printResult ((curr, total), guess) = do
+
+                              columns <- getColumns
+
+                              if curr < (total - 1)
+                                 && guessHasEmptyPlaces guess
+                              then do
+                                putStrLn $ "\ESC[5m"
+                                        ++ (centerString "You quit! Why?" columns)
+                                        ++ "\ESC[m"
+                              else
+                                printNormalResult guess
 
 takeWhilePlus :: (a->Bool)->[a]->[a]
 takeWhilePlus f list = (fst result) ++ customHead (snd result)
@@ -172,3 +180,39 @@ takeWhilePlus f list = (fst result) ++ customHead (snd result)
 customHead :: [a] -> [a]
 customHead [] = []
 customHead (x:xs) = [x]
+
+centerString :: String -> Int -> String
+centerString string cols = (putChars ((cols - (length string)) `div` 2) ' ')
+                           ++ string
+
+isNumeric :: Char -> Bool
+isNumeric char = char `elem` "0123456789"
+
+readFromTerminal :: String -> Int
+readFromTerminal string = foldr (\x acc -> if isNumeric x
+                                           then
+                                             (acc + (read [x])) * 10
+                                           else acc) 0 string
+
+putChars :: Int -> Char -> String
+putChars rep char
+      | rep > 0         = char:putChars (rep - 1) char
+      | rep == 0        = ""
+      | otherwise       = putChars (-rep) char
+
+getColumns :: IO Int
+getColumns = do
+     columnsRaw <- (readProcess "tput" ["cols"] [])
+     let columns = readFromTerminal columnsRaw
+     return columns
+
+printHeader :: IO ()
+printHeader = do
+
+     columns <- getColumns
+
+     putStrLn $ "\n\ESC[2J\ESC[0;0H\n\ESC[1m"
+           ++ (centerString "The Grand Haskell Guessing Game" columns)
+           ++ "\ESC[m"
+     putStrLn (centerString "by Stjepan Poljak" columns)
+     putStrLn (putChars columns '_')
