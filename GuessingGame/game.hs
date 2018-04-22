@@ -186,19 +186,17 @@ isNumeric :: Char -> Bool
 isNumeric char = char `elem` "0123456789"
 
 readFromTerminal :: String -> Int
-readFromTerminal string = foldr (\x acc -> if isNumeric x
+readFromTerminal string = foldl (\acc x -> if isNumeric x
                                            then
-                                             (acc + (read [x])) * 10
+                                             (acc * 10 + (read [x]))
                                            else acc) 0 string
-
 guessWord :: String
 guessWord = "haskell"
 
 putChars :: Int -> Char -> String
 putChars rep char
       | rep > 0         = char:putChars (rep - 1) char
-      | rep == 0        = ""
-      | otherwise       = putChars (-rep) char
+      | otherwise       = ""
 
 getColumns :: IO Int
 getColumns = do
