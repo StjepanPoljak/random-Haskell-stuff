@@ -42,14 +42,6 @@ drawAll = do
 
     height <- drawBoard gOrigin gWidth gHeight gPaddingX gPaddingY
     
-    currPos <- printStringOn (screenPos gOrigin (PX2, PY1)
-                                        gWidth gHeight
-                                        gPaddingX gPaddingY) "#" False
-    
-    let prevY = (max (height + 1) (currPos + 1))
-    
-    putStrLn $ "\ESC[" ++ (show prevY) ++ ";0H"
-
     logDown ("drawing board: O" ++ (show gOrigin) ++ " dim "
                                 ++ (show $ length [(PX0)..]) ++ "×"
                                 ++ (show $ length [(PY0)..]) ++ " each "
@@ -57,7 +49,13 @@ drawAll = do
                                 ++ (show gHeight) ++ " pad "
                                 ++ (show gPaddingX) ++ "×"
                                 ++ (show gPaddingY)
-                                ++ " (press ESC to quit)") prevY
+                                ++ " (press ESC to quit)") (height + 1)
+
+                                -- note that (height + 1) in logDown refers to
+                                -- previous cursor position, so that log can
+                                -- write on bottom of screen and then get
+                                -- cursor back where it was - for now we don't
+                                -- need this in our program...
 
         -- **************************** KEYBOARD **************************** --
 
