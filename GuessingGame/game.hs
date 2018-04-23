@@ -1,11 +1,31 @@
 import Data.Foldable
 import System.Process
+import System.Random
+import System.Environment
 
 placeholder::String
 placeholder = "#"
 
+getRandomWord :: IO String
+getRandomWord = do
+
+     (dictionary:_) <- getArgs
+
+     rndGen <- newStdGen
+
+     fileContents <- readFile dictionary
+
+     let (random:_) = (randomRs (0, (length . lines $ fileContents) - 1) rndGen :: [Int])
+
+     return (lines fileContents !! random)
+
+
 main :: IO ()
 main = do
+
+     guessWord <- getRandomWord
+
+     let guessLetters = getNumOfLetters guessWord
 
      printHeader
 
@@ -21,26 +41,31 @@ main = do
      putStrLn "\ESC[m"
 
      printResult =<< foldlM (\acc x ->
-              
+
               let step = (snd acc) <+ (snd x)
-                  message = getStepString step (fst x) guessLetters in
+                  message = getStepString step (fst x) guessLetters
+                  currMove = fst $ fst acc in
                do printHeader
                   putStrLn ""
                   putStrLn $ centerString message columns
                   putStrLn $ centerString ("You have "
-                          ++ (show $ guessLetters - (fst $ fst acc) - 1)
+                          ++ (show $ guessLetters - currMove - 1)
                           ++ " more attempts.") columns
                   putStrLn $ "\ESC[2m"
                           ++ (centerString "(type :q to quit)" columns)
                   putStrLn "\ESC[m"
-                  putStrLn $ centerString (show step) columns
+                  putStrLn $ centerString (show $ if currMove == guessLetters - 1
+                                                  then
+                                                    fillOut guessWord
+                                                  else
+                                                    step) columns
                   return $ acc +! (1, step))
 
               ((0, guessLetters), (generateGuessWord guessWord []))
-       
+
        . zip [0..]
        . takeWhilePlus guessHasEmptyPlaces
-       . map (\x -> if x == guessWord then fillOut x else processSingleGuess x)
+       . map (\x -> if x == guessWord then fillOut x else processSingleGuess x guessWord)
        . takeWhile (/=":q")
        . take guessLetters
        . lines =<< getContents
@@ -48,8 +73,6 @@ main = do
      putStrLn $ "\ESC[3m"
              ++ (centerString "Thank you for playing!" columns)
              ++ "\ESC[m\n"
-
-     where guessLetters = getNumOfLetters guessWord
 
 data Letter = Letter Char | Empty deriving (Eq, Show)
 
@@ -85,14 +108,14 @@ generateGuessWord word list = GuessWord ( foldr (\x acc -> if fst x `elem` list
                                                 [] (zip [0..] word) )
                                         ( length list /= 0 )
 
-processGuess :: [String] -> [GuessWord]
-processGuess list = map (\x -> processSingleGuess x) list
+processGuess :: [String] -> String -> [GuessWord]
+processGuess list guessWord = map (\x -> processSingleGuess x guessWord) list
 
-processSingleGuess :: String -> GuessWord
-processSingleGuess [] = GuessWord [] False
-processSingleGuess (x:xs) = let guessChar = x
-                                fills = getAllPositions guessChar guessWord in
-                                generateGuessWord guessWord fills
+processSingleGuess :: String -> String -> GuessWord
+processSingleGuess [] _ = GuessWord [] False
+processSingleGuess (x:xs) guessWord  = let guessChar = x
+                                           fills = getAllPositions guessChar guessWord in
+                                       generateGuessWord guessWord fills
 
 (<+) :: GuessWord -> GuessWord -> GuessWord
 (<+) (GuessWord word1 guess1)
@@ -190,8 +213,8 @@ readFromTerminal string = foldl (\acc x -> if isNumeric x
                                            then
                                              (acc * 10 + (read [x]))
                                            else acc) 0 string
-guessWord :: String
-guessWord = "haskell"
+guessWordFallback :: String
+guessWordFallback = "haskell"
 
 putChars :: Int -> Char -> String
 putChars rep char
