@@ -1,0 +1,11 @@
+haskell
+fortran
+cobol
+ruby
+shell
+bash
+monad
+functor
+cabal
+hackage
+hoogle

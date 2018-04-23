@@ -3,6 +3,8 @@ import System.Process
 import System.Random
 import System.Environment
 
+-- Usage example: $ game dictionary.txt
+
 placeholder::String
 placeholder = "#"
 
@@ -10,15 +12,16 @@ getRandomWord :: IO String
 getRandomWord = do
 
      (dictionary:_) <- getArgs
-
-     rndGen <- newStdGen
-
      fileContents <- readFile dictionary
 
-     let (random:_) = (randomRs (0, (length . lines $ fileContents) - 1) rndGen :: [Int])
+     rndGen <- newStdGen
+     let (random:_) = (randomRs (0, pred
+                                  . length
+                                  . lines
+                                  $ fileContents)
+                       rndGen :: [Int])
 
      return (lines fileContents !! random)
-
 
 main :: IO ()
 main = do
