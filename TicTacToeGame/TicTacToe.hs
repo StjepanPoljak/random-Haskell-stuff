@@ -1,4 +1,5 @@
 import Data.Foldable
+import Data.List
 import System.Process
 import Control.Monad.State
 import System.IO
@@ -291,7 +292,7 @@ data TPlay = PL1 | PL2 deriving (Eq, Show)
 
 data TPlayType = Human | AI deriving (Eq, Show)
 
-data TMove = TMove (TPosX, TPosY) TPlay deriving (Eq, Show)
+data TMove = TMove (TPosX, TPosY) TPlay | Dummy TPlay deriving (Eq, Show)
 
 data TGameState = Empty | Node TMove ([TGameState]) deriving (Eq, Show)
 
@@ -299,9 +300,10 @@ data TGameState = Empty | Node TMove ([TGameState]) deriving (Eq, Show)
 
 getPlayer :: TMove -> TPlay
 getPlayer (TMove _ player) = player
+getPlayer (Dummy player) = player
 
-getLastPlayer :: TGameState -> TPlay
-getLastPlayer (Node move _) = getPlayer move
+equalMovePositons :: TMove -> TMove -> Bool
+(TMove pos1 _) `equalMovePositons` (TMove pos2 _) = pos1 == pos2
 
 (>+) :: TMove -> (Maybe [TMove]) -> (Maybe [TMove])
 move >+ Nothing = Nothing
@@ -312,43 +314,158 @@ move >+ (Just moves) = if move `elem` moves
                          Just (move:moves)
 
 -- add move as a new tree level --
+
 (+>) :: TMove -> Maybe TGameState -> Maybe TGameState
-move +> Nothing = Nothing
-move +> (Just Empty) = Just $ Node move []
-move +> (Just nodes) = if getPlayer move == getLastPlayer nodes then Nothing else Just $ (Node move [nodes])
+newMove +> maybeState = case maybeState of
+  
+  Nothing      -> Nothing
+  Just state   -> case state of
 
--- add move as a new mode in the same level --
-(>-) :: TMove -> Maybe TGameState -> Maybe TGameState
-move >- Nothing = Nothing
-move >- (Just Empty) = move +> (Just Empty)
-move >- Just (Node lastMove list) = Just (Node lastMove $ (Node move []):list)
-
-accMoves :: Maybe TGameState -> (Maybe [TMove])
-accMoves Nothing = Nothing
-accMoves (Just Empty) = Just []
-accMoves (Just (Node move [])) = Just [move]
-accMoves (Just (Node move [node])) = move >+ (accMoves (Just node))
-accMoves (Just (Node move list)) = Nothing
-
-traverseMoves :: Maybe TGameState -> (Maybe TMove)
-traverseMoves Nothing = Nothing
-traverseMoves (Just Empty) = Nothing
-traverseMoves (Just (Node move [])) = Just move
-traverseMoves (Just (Node move [node])) = traverseMoves (Just node)
-traverseMoves (Just (Node move list)) = Nothing
+    Empty                     -> Just $ Node newMove []
+    Node lastMove []          -> if getPlayer newMove == getPlayer lastMove
+                                 || lastMove `equalMovePositons` newMove
+                                 then
+                                   Nothing
+                                 else
+                                   Just $ Node lastMove [Node newMove []]
+    Node currentMove (x:xs)   -> case newMove +> (Just x) of
+  
+      Nothing         -> Nothing
+      Just newState   -> if currentMove `equalMovePositons` newMove
+                         then
+                           Nothing
+                         else
+                           Just $ Node currentMove [newState]
 
 switchPlayers :: TPlay -> TPlay
 switchPlayers PL1 = PL2
 switchPlayers PL2 = PL1
 
-getPossibleMoves :: Maybe TGameState -> TPlay -> Maybe [TMove]
-getPossibleMoves Nothing _ = Nothing
-getPossibleMoves state player = Just $ (map (\pos -> TMove pos player) . filter (\pos -> if moves == Nothing then False else let Just movesuw = moves in not $ pos `elem` (map getPositionFromMove movesuw) )) getAllPositions
-           where moves = accMoves state
-           
-mockGameState :: Maybe TGameState -> TPlay -> Maybe TGameState
-mockGameState Nothing _ = Nothing
-mockGameState state player = let possMoves = (getPossibleMoves state player) in if possMoves == Nothing then state else let Just possMovesUW = possMoves in foldl (\acc x -> (mockGameState (x +> acc) (switchPlayers player))) (state) possMovesUW
+switchMove :: TMove -> TMove
+switchMove (TMove pos play) = (TMove pos (switchPlayers play))
 
-getPositionFromMove :: TMove -> (TPosX, TPosY)
-getPositionFromMove (TMove pos play) = pos
+getPossibilities :: [TMove] -> [TMove]
+getPossibilities moves = if isWin moves player || isWin moves (switchPlayers player) then [] else possibilities
+
+        where possibilities = map (\pos -> TMove pos player)
+                            . filter (\pos -> not $ pos `elem` (map (\x -> let (TMove pos _) = x in pos) moves))
+                            $ getAllPositions
+
+              player = if moves == []
+                       then
+                         PL1
+                       else
+                         let (x:_) = moves in switchPlayers $ getPlayer x
+
+generateDecisionTree :: TGameState -> Int -> TGameState
+generateDecisionTree state level
+ -- starting player is PL1, so we make a dummy for PL2 before first move just to hold nodes in a tree --
+  | state == Empty   = generateTreeStep (Node (Dummy PL2) []) [] 0 level
+  | otherwise        = generateTreeStep state [] 0 $ level - 1
+
+isDummy :: TMove -> Bool
+isDummy move = case move of
+
+  Dummy _ -> True
+  otherwise -> False
+
+generateTreeStep :: TGameState -> [TMove] -> Int -> Int -> TGameState
+generateTreeStep state accMoves currLevel targetLevel
+
+  | currLevel > targetLevel   = state
+  | otherwise                 = case state of
+
+      Empty             -> Empty
+      Node move []      -> let newMoves = if isDummy move
+                                          then
+                                            accMoves
+                                          else
+                                            move:accMoves in case getPossibilities newMoves of
+
+        []     -> Node move []
+        poss   -> generateTreeStep (Node move (map (\x -> Node x []) poss)) newMoves currLevel targetLevel
+
+      Node move nodes   -> Node move (foldr (\node acc -> (generateTreeStep node
+                                                                            (if isDummy move
+                                                                             then
+                                                                               accMoves
+                                                                             else
+                                                                               (move:accMoves))
+                                                                            (succ currLevel)
+                                                                            targetLevel):acc) [] nodes)
+isSubsetOf :: Eq a => [a] -> [a] -> Bool
+isSubsetOf list1 list2 = length (list1 `intersect` list2) == length list1
+
+winPositions :: [[(TPosX, TPosY)]]
+winPositions = foldr (\curr acc -> [(x,y) | x <- [curr], y <- [(PY0)..]]:acc) [] [(PX0)..]
+            ++ foldr (\curr acc -> [(x,y) | x <- [(PX0)..], y <- [curr]]:acc) [] [(PY0)..]
+            ++ [zip [(PX0)..] [(PY0)..]] ++ [zip (reverse [(PX0)..]) [(PY0)..]]
+
+isWin :: [TMove] -> TPlay -> Bool
+isWin moves player
+
+  | length moves < 5   = False
+  | otherwise          = foldr (\x acc -> acc || x `isSubsetOf` playerMoves) False winPositions
+  
+  where playerMoves = map (\x -> let TMove pos player = x in pos)
+                    . filter (\x -> getPlayer x == player)
+                    $ moves
+
+getGameResult :: [TMove] -> TPlay -> TGameResult
+getGameResult moves player = if isWin moves player then Win else if isLoss moves player then Loss else Undefined
+
+isLoss :: [TMove] -> TPlay -> Bool
+isLoss moves player = isWin moves (switchPlayers player)
+
+choose :: [Maybe (Int, TMove)] -> TPlay -> Maybe (Int, TMove)
+choose [] _ = Nothing
+choose list player = case filteredList of
+
+    []      -> Nothing
+    (x:_)   -> let Just (_, headMove) = x
+                   comp = if getPlayer headMove == player then (>) else (<) in
+
+                   foldl (\acc curr -> let Just (scoreCurr, move) = curr
+                                           Just (scoreAcc, _) = acc in
+
+                                           if scoreCurr `comp` scoreAcc
+                                           then
+                                             curr
+                                           else
+                                             acc) x filteredList 
+
+  where filteredList = filter (/=Nothing) list
+
+data TGameResult = Win | Undefined | Loss deriving (Show, Eq)
+
+rate :: Int -> TGameResult -> Int
+rate level result = case result of
+
+  Win         -> 10
+  Undefined   -> 0
+  Loss        -> (-10)
+
+cutTree :: TGameState -> TGameState
+cutTree state = cutTreeStep state True
+
+cutTreeStep :: TGameState -> Bool -> TGameState
+cutTreeStep state cutting = case state of
+
+  Empty              -> Empty
+  Node move []       -> Node move []
+  Node move [node]   -> if cutting then cutTreeStep node True else (Node move [cutTreeStep node False])
+  Node move nodes    -> Node move (foldr (\node acc -> (cutTreeStep node False):acc) [] nodes)
+
+minimax :: TGameState -> Int -> Maybe (Int, TMove)
+minimax state difficulty = let decisionTree = cutTree $ generateDecisionTree state difficulty in
+                               case decisionTree of
+  Empty -> Nothing
+  Node (Dummy player) _     -> minimaxStep decisionTree 0 (switchPlayers player) []
+  Node (TMove _ player) _   -> minimaxStep decisionTree 0 player []
+
+minimaxStep :: TGameState -> Int -> TPlay -> [TMove] -> Maybe (Int, TMove)
+minimaxStep state currLevel player accMoves = case state of
+
+  Node move [] -> Just (rate currLevel $ getGameResult (move:accMoves) player, move)
+  Node move nodes -> (\res -> choose res player)
+                   $ foldr (\node acc -> (minimaxStep node (succ currLevel) player (move:accMoves)):acc) [] nodes
