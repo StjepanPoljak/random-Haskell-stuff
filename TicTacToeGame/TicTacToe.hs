@@ -12,8 +12,7 @@ main = do
     hSetBuffering stdin NoBuffering
     hSetEcho stdout False
 
-    drawAll
-    waitForInput [] (PX0, PY0)
+    programLoop Empty
     
     showCursor
     clearScreen
@@ -21,12 +20,11 @@ main = do
 
     return ()
 
-programLoop :: IO ()
-programLoop = do
-  player <- choosePlayer
+programLoop :: TGameState -> IO TGameState
+programLoop state = do
   drawAll
-  waitForInput [] (PX0, PY0)
-  return ()
+  waitForInput Empty PL1 [] (PX0, PY0)
+  return state
 
         -- ****************************** GUI SETTINGS ******************************** --
 
@@ -173,11 +171,11 @@ isLetter char = char `elem` (['A'..'Z'] ++ ['a'..'z'])
 
         -- **************************** KEYBOARD **************************** --
 
-waitForInput :: [Char] -> (TPosX, TPosY) -> IO ()
-waitForInput prev pos = do
+waitForInput :: TGameState -> TPlay -> [Char] -> (TPosX, TPosY) -> IO ()
+waitForInput state player prev pos = do
     
      x <- stdin `ifReadyDo` getChar
-     takeAction x prev pos
+     takeAction state player x prev pos
 
 move :: Direction -> (TPosX, TPosY) -> (Int, Int) -> Int -> Int
                   -> Int -> Int -> IO (TPosX, TPosY)
@@ -202,18 +200,35 @@ move dir pos origin width height padX padY = do
 moveConv :: Direction -> (TPosX, TPosY) -> IO (TPosX, TPosY)
 moveConv dir pos = move dir pos gOrigin gWidth gHeight gPaddingX gPaddingY
 
-takeAction :: Maybe Char -> [Char] -> (TPosX, TPosY) -> IO ()
-takeAction Nothing prev pos
+takeAction :: TGameState -> TPlay -> Maybe Char -> [Char] -> (TPosX, TPosY) -> IO ()
+takeAction state player Nothing prev pos
 
     | prev == ['\ESC']           = return ()
-    | prev == ['A','[','\ESC']   = waitForInput [] =<< moveConv DUp pos
-    | prev == ['B','[','\ESC']   = waitForInput [] =<< moveConv DDown pos
-    | prev == ['C','[','\ESC']   = waitForInput [] =<< moveConv DRight pos
-    | prev == ['D','[','\ESC']   = waitForInput [] =<< moveConv DLeft pos
-    | prev == ['\n']             = do { logDown "Enter!" 0; drawCenterSymbol pos 'X'; waitForInput [] pos }
-    | otherwise                  = waitForInput [] pos
+    | prev == ['A','[','\ESC']   = waitForInput state player [] =<< moveConv DUp pos
+    | prev == ['B','[','\ESC']   = waitForInput state player [] =<< moveConv DDown pos
+    | prev == ['C','[','\ESC']   = waitForInput state player [] =<< moveConv DRight pos
+    | prev == ['D','[','\ESC']   = waitForInput state player [] =<< moveConv DLeft pos
+    | prev == ['\n']             = case pos `isTakenIn` state of
+                                     Nothing      -> do { logDown "Error!" 0; return () }
+                                     Just taken   -> if taken
+                                                     then do
+                                                       logDown ("Can't take that spot!") 0
+                                                       waitForInput state player [] pos
+                                                     else do 
+                                                       case (TMove pos player +> Just state) of
+                                     
+                                                         Nothing      -> do
+                                                                    logDown "Error!" 0
+                                                                    return ()
 
-takeAction (Just char) prev pos = waitForInput (char:prev) pos
+                                                         Just state   -> do
+                                                                    logDown ("Player " ++ (show player) ++ " took turn.") 0
+                                                                    logDown (show $ state) 0
+                                                                    waitForInput state (switchPlayers player) [] pos
+
+    | otherwise                  = waitForInput state player [] pos
+
+takeAction state player (Just char) prev pos = waitForInput state player (char:prev) pos
 
 ifReadyDo :: Handle -> IO a -> IO (Maybe a)
 ifReadyDo hnd x = hReady hnd >>= f
@@ -268,6 +283,14 @@ showCursor = callProcess "tput" ["cnorm"]
 
         -- **************************** GAME SPECIFIC GUI ***************************** --
 
+isTakenIn :: (TPosX, TPosY) -> TGameState -> Maybe Bool
+isTakenIn takePos state = case state of
+
+  Empty                       -> Just False
+  Node (TMove pos _) []       -> if pos == takePos then Just True else Just False
+  Node (TMove pos _) [node]   -> if pos == takePos then Just True else isTakenIn takePos node
+  Node move nodes             -> Nothing -- error --
+
 choosePlayer :: IO TPlay
 choosePlayer = do
       player <- getLine
@@ -296,7 +319,7 @@ data TMove = TMove (TPosX, TPosY) TPlay | Dummy TPlay deriving (Eq, Show)
 
 data TGameState = Empty | Node TMove ([TGameState]) deriving (Eq, Show)
 
-        -- ******************************** GAME LOGIC ******************************** --
+        -- ************************************ AI ************************************ --
 
 getPlayer :: TMove -> TPlay
 getPlayer (TMove _ player) = player
