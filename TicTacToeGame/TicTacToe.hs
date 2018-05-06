@@ -12,7 +12,7 @@ main = do
     hSetBuffering stdin NoBuffering
     hSetEcho stdout False
 
-    programLoop Empty
+    programLoop $ Just (Empty, PL1)
     
     showCursor
     clearScreen
@@ -20,11 +20,18 @@ main = do
 
     return ()
 
-programLoop :: TGameState -> IO TGameState
-programLoop state = do
-  drawAll
-  waitForInput Empty PL1 [] (PX0, PY0)
-  return state
+programLoop :: Maybe (TGameState, TPlay) -> IO (Maybe (TGameState, TPlay))
+programLoop package = case package of
+
+    Nothing -> return Nothing
+
+    Just (state, player) -> do
+
+                        drawAll
+                        drawSymbols state
+
+                        decide <- waitForInput state player [] (PX1, PY1)
+                        programLoop decide
 
         -- ****************************** GUI SETTINGS ******************************** --
 
@@ -171,15 +178,16 @@ isLetter char = char `elem` (['A'..'Z'] ++ ['a'..'z'])
 
         -- **************************** KEYBOARD **************************** --
 
-waitForInput :: TGameState -> TPlay -> [Char] -> (TPosX, TPosY) -> IO ()
+waitForInput :: TGameState -> TPlay -> [Char] -> (TPosX, TPosY) -> IO (Maybe (TGameState, TPlay))
 waitForInput state player prev pos = do
     
      x <- stdin `ifReadyDo` getChar
-     takeAction state player x prev pos
+     newState <- takeAction state player x prev pos
+     return newState
 
 move :: Direction -> (TPosX, TPosY) -> (Int, Int) -> Int -> Int
-                  -> Int -> Int -> IO (TPosX, TPosY)
-move dir pos origin width height padX padY = do
+                  -> Int -> Int -> TGameState -> IO (TPosX, TPosY)
+move dir pos origin width height padX padY state = do
 
                                     logDown (show dir) 0
 
@@ -191,44 +199,48 @@ move dir pos origin width height padX padY = do
                                             padX padY (isTopRow new)
                                             True
 
+                                    drawSymbols state
+
                                     return new
         
         where realPos = screenPos gOrigin pos gWidth gHeight gPaddingX gPaddingY
               newPos = screenPos origin new width height padX padY
               new = (go pos dir)
 
-moveConv :: Direction -> (TPosX, TPosY) -> IO (TPosX, TPosY)
-moveConv dir pos = move dir pos gOrigin gWidth gHeight gPaddingX gPaddingY
+moveConv :: Direction -> (TPosX, TPosY) -> TGameState -> IO (TPosX, TPosY)
+moveConv dir pos state = move dir pos gOrigin gWidth gHeight gPaddingX gPaddingY state
 
-takeAction :: TGameState -> TPlay -> Maybe Char -> [Char] -> (TPosX, TPosY) -> IO ()
+takeAction :: TGameState -> TPlay -> Maybe Char -> [Char] -> (TPosX, TPosY)
+                         -> IO (Maybe (TGameState, TPlay))
 takeAction state player Nothing prev pos
 
-    | prev == ['\ESC']           = return ()
-    | prev == ['A','[','\ESC']   = waitForInput state player [] =<< moveConv DUp pos
-    | prev == ['B','[','\ESC']   = waitForInput state player [] =<< moveConv DDown pos
-    | prev == ['C','[','\ESC']   = waitForInput state player [] =<< moveConv DRight pos
-    | prev == ['D','[','\ESC']   = waitForInput state player [] =<< moveConv DLeft pos
+    | prev == ['\ESC']           = return Nothing
+    | prev == ['A','[','\ESC']   = waitForInput state player [] =<< moveConv DUp pos state
+    | prev == ['B','[','\ESC']   = waitForInput state player [] =<< moveConv DDown pos state
+    | prev == ['C','[','\ESC']   = waitForInput state player [] =<< moveConv DRight pos state
+    | prev == ['D','[','\ESC']   = waitForInput state player [] =<< moveConv DLeft pos state
     | prev == ['\n']             = case pos `isTakenIn` state of
-                                     Nothing      -> do { logDown "Error!" 0; return () }
-                                     Just taken   -> if taken
-                                                     then do
-                                                       logDown ("Can't take that spot!") 0
-                                                       waitForInput state player [] pos
-                                                     else do 
-                                                       case (TMove pos player +> Just state) of
                                      
-                                                         Nothing      -> do
-                                                                    logDown "Error!" 0
-                                                                    return ()
-
-                                                         Just state   -> do
-                                                                    logDown ("Player " ++ (show player) ++ " took turn.") 0
-                                                                    logDown (show $ state) 0
-                                                                    waitForInput state (switchPlayers player) [] pos
+            Nothing      -> errorAction
+            Just taken   -> if taken
+                            then do
+                              logDown ("Can't take that spot!") 0
+                              waitForInput state player [] pos
+                            else do 
+                              case (TMove pos player +> Just state) of
+                                
+                                Nothing      -> errorAction
+                                Just state   -> do
+                                    
+                                    logDown ("Player " ++ (show player) ++ " took turn.") 0
+                                    return $ Just (state, switchPlayers player)
 
     | otherwise                  = waitForInput state player [] pos
 
 takeAction state player (Just char) prev pos = waitForInput state player (char:prev) pos
+
+errorAction :: IO (Maybe (TGameState, TPlay))
+errorAction = do { logDown "Error!" 0; return Nothing }
 
 ifReadyDo :: Handle -> IO a -> IO (Maybe a)
 ifReadyDo hnd x = hReady hnd >>= f
@@ -291,11 +303,6 @@ isTakenIn takePos state = case state of
   Node (TMove pos _) [node]   -> if pos == takePos then Just True else isTakenIn takePos node
   Node move nodes             -> Nothing -- error --
 
-choosePlayer :: IO TPlay
-choosePlayer = do
-      player <- getLine
-      return PL1
-
 getSymbolForPlayer :: TPlay -> Char
 getSymbolForPlayer n = case n of
                          PL1 -> 'X'
@@ -308,6 +315,16 @@ drawCenterSymbol tetrisPos symbol = do
   return ()
 
     where (realX, realY) = screenPos gOrigin tetrisPos gWidth gHeight gPaddingX gPaddingY
+
+drawSymbols :: TGameState -> IO ()
+drawSymbols state = case state of
+
+  Empty                            -> return ()
+  Node (TMove pos play) []         -> drawCenterSymbol pos $ getSymbolForPlayer play 
+  Node (TMove pos play) (node:_)   -> do
+                 
+                 drawCenterSymbol pos $ getSymbolForPlayer play
+                 drawSymbols node
 
         -- ******************************** GAME DATA ********************************* --
 
@@ -368,17 +385,22 @@ switchMove :: TMove -> TMove
 switchMove (TMove pos play) = (TMove pos (switchPlayers play))
 
 getPossibilities :: [TMove] -> [TMove]
-getPossibilities moves = if isWin moves player || isWin moves (switchPlayers player) then [] else possibilities
+getPossibilities moves = if isWin moves player
+                         || isLoss moves player
+                         then
+                           []
+                         else
+                           possibilities
 
-        where possibilities = map (\pos -> TMove pos player)
-                            . filter (\pos -> not $ pos `elem` (map (\x -> let (TMove pos _) = x in pos) moves))
-                            $ getAllPositions
+  where possibilities = map (\pos -> TMove pos player)
+                      . filter (\pos -> not $ pos `elem` (map (\x -> let (TMove pos _) = x in pos) moves))
+                      $ getAllPositions
 
-              player = if moves == []
-                       then
-                         PL1
-                       else
-                         let (x:_) = moves in switchPlayers $ getPlayer x
+        player = if moves == []
+                 then
+                   PL1
+                 else
+                   let (x:_) = moves in switchPlayers $ getPlayer x
 
 generateDecisionTree :: TGameState -> Int -> TGameState
 generateDecisionTree state level
@@ -435,7 +457,15 @@ isWin moves player
                     $ moves
 
 getGameResult :: [TMove] -> TPlay -> TGameResult
-getGameResult moves player = if isWin moves player then Win else if isLoss moves player then Loss else Undefined
+getGameResult moves player = if isWin moves player
+                             then
+                               Win
+                             else
+                               if isLoss moves player
+                               then
+                                 Loss
+                               else
+                                 Undefined
 
 isLoss :: [TMove] -> TPlay -> Bool
 isLoss moves player = isWin moves (switchPlayers player)
