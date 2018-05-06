@@ -4,6 +4,10 @@ import System.Process
 import Control.Monad.State
 import System.IO
 
+getPlayerTypes :: IO [(TPlay, TPlayType)]
+getPlayerTypes = do
+    return [(PL1, Human), (PL2, AI)]
+
 main :: IO ()
 main = do
 
@@ -12,7 +16,12 @@ main = do
     hSetBuffering stdin NoBuffering
     hSetEcho stdout False
 
-    programLoop $ Just (Empty, PL1)
+    types <- getPlayerTypes
+
+    programLoop (Just (Empty, PL1)) (\x -> case filter (\y -> let (pl, plT) = y in pl == x) types of
+                                                [] -> Nothing
+                                                [(_, z)] -> Just z
+                                                list -> Nothing)
     
     showCursor
     clearScreen
@@ -20,8 +29,8 @@ main = do
 
     return ()
 
-programLoop :: Maybe (TGameState, TPlay) -> IO (Maybe (TGameState, TPlay))
-programLoop package = case package of
+programLoop :: Maybe (TGameState, TPlay) -> (TPlay -> Maybe TPlayType) -> IO (Maybe (TGameState, TPlay))
+programLoop package getType = case package of
 
     Nothing -> return Nothing
 
@@ -31,7 +40,7 @@ programLoop package = case package of
                         drawSymbols state
 
                         decide <- waitForInput state player [] (PX1, PY1)
-                        programLoop decide
+                        programLoop decide getType
 
         -- ****************************** GUI SETTINGS ******************************** --
 
