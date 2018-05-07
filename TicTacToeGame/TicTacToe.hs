@@ -32,15 +32,23 @@ main = do
 programLoop :: Maybe (TGameState, TPlay) -> (TPlay -> Maybe TPlayType) -> IO (Maybe (TGameState, TPlay))
 programLoop package getType = case package of
 
-    Nothing -> return Nothing
-
-    Just (state, player) -> do
+  Nothing                -> return Nothing
+  Just (state, player)   -> do
 
                         drawAll
                         drawSymbols state
 
-                        decide <- waitForInput state player [] (PX1, PY1)
-                        programLoop decide getType
+                        case isWinState state (switchPlayers player) of
+                        
+                          Nothing         -> return Nothing
+                          Just winState   -> if winState
+                                             then do
+                                              clearScreen
+                                              putStrLn $ "Player " ++ (show player)
+                                              return Nothing
+                                            else do
+                                              decide <- waitForInput state player [] (PX1, PY1)
+                                              programLoop decide getType
 
         -- ****************************** GUI SETTINGS ******************************** --
 
@@ -72,7 +80,7 @@ instance Show Direction where
   show DLeft = "Left"
   show DRight = "Right"
 
-        -- ******************************** GUI ******************************** --
+        -- *********************************** GUI ************************************ --
 
 drawAll :: IO ()
 drawAll = do
@@ -454,6 +462,17 @@ winPositions :: [[(TPosX, TPosY)]]
 winPositions = foldr (\curr acc -> [(x,y) | x <- [curr], y <- [(PY0)..]]:acc) [] [(PX0)..]
             ++ foldr (\curr acc -> [(x,y) | x <- [(PX0)..], y <- [curr]]:acc) [] [(PY0)..]
             ++ [zip [(PX0)..] [(PY0)..]] ++ [zip (reverse [(PX0)..]) [(PY0)..]]
+
+isWinState :: TGameState -> TPlay -> Maybe Bool
+isWinState state player = isWinStateStep state [] player
+
+isWinStateStep :: TGameState -> [TMove] -> TPlay -> Maybe Bool
+isWinStateStep state accMoves player = case state of
+  
+  Empty              -> Just False
+  Node move []       -> Just $ isWin (move:accMoves) player
+  Node move [node]   -> isWinStateStep node (move:accMoves) player
+  Node move (x:_)    -> Nothing -- error --
 
 isWin :: [TMove] -> TPlay -> Bool
 isWin moves player
