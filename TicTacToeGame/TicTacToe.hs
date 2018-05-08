@@ -36,16 +36,25 @@ programLoop package getType = case package of
   Just (state, player)   -> do
 
     drawAll
-    drawBox (screenPos gOrigin (PX1, PY1) gWidth gHeight gPaddingX gPaddingY) gWidth gHeight gPaddingX gPaddingY False True
+    drawBox (screenPos gOrigin (PX1, PY1) gWidth gHeight gPaddingX gPaddingY)
+             gWidth gHeight gPaddingX gPaddingY False True
     drawSymbols state
 
-    case isWinState state (switchPlayers player) of
+    if isDraw state
+    then do
+      clearScreen
+      putStrLn $ "Draw! Press enter to exit."
+      y <- getLine
+      return Nothing
+    else
+
+      case isWinState state (switchPlayers player) of
                       
       Nothing         -> do { putStrLn "Win state function fail."; y <- getLine; return Nothing }
       Just winState   -> if winState
                          then do
                            clearScreen
-                           putStrLn $ "Player " ++ (show $ switchPlayers player)
+                           putStrLn $ "Player " ++ (show $ switchPlayers player) ++ " won! Press enter to exit."
                            y <- getLine
                            return Nothing
                          else do
@@ -592,3 +601,14 @@ minimaxStep state player level accMoves = case state of
    Node move nodes   -> (\array -> findWithComp' array (if getPlayer move == player then (<) else (>)))
                       . map (\node -> minimaxStep node player (succ level) (move:accMoves))
                       $ nodes
+
+isDraw :: TGameState -> Bool
+isDraw state = isDrawStep state []
+
+isDrawStep :: TGameState -> [(TPosX, TPosY)] -> Bool
+isDrawStep state accPos = case state of
+
+  Empty                       -> False
+  Node (TMove pos _) []       -> length (pos:accPos) == length getAllPositions
+  Node (TMove pos _) [node]   -> isDrawStep node (pos:accPos)
+  Node _ _                    -> False
