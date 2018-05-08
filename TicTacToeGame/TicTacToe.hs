@@ -35,20 +35,37 @@ programLoop package getType = case package of
   Nothing                -> return Nothing
   Just (state, player)   -> do
 
-                        drawAll
-                        drawSymbols state
+    drawAll
+    drawBox (screenPos gOrigin (PX1, PY1) gWidth gHeight gPaddingX gPaddingY) gWidth gHeight gPaddingX gPaddingY False True
+    drawSymbols state
 
-                        case isWinState state (switchPlayers player) of
-                        
-                          Nothing         -> return Nothing
-                          Just winState   -> if winState
-                                             then do
-                                              clearScreen
-                                              putStrLn $ "Player " ++ (show player)
-                                              return Nothing
-                                            else do
-                                              decide <- waitForInput state player [] (PX1, PY1)
-                                              programLoop decide getType
+    case isWinState state (switchPlayers player) of
+                      
+      Nothing         -> do { putStrLn "Win state function fail."; y <- getLine; return Nothing }
+      Just winState   -> if winState
+                         then do
+                           clearScreen
+                           putStrLn $ "Player " ++ (show $ switchPlayers player)
+                           y <- getLine
+                           return Nothing
+                         else do
+                           case getType player of
+
+                             Nothing -> do { putStrLn "Player type get fail."; y <- getLine; return Nothing }
+                             Just Human   -> do
+
+                               decide <- waitForInput state player [] (PX1, PY1)
+                               programLoop decide getType
+
+                             Just AI      -> do
+
+                               case minimax state player 10 of
+
+                                 Nothing -> do { putStrLn "Minimax algorithm fail."; y <- getLine; return Nothing }
+                                 Just newMove -> case newMove +> Just state of
+  
+                                   Nothing -> do { putStrLn "Illegal move."; y <- getLine; return Nothing }
+                                   Just uwstate -> programLoop (Just (uwstate, switchPlayers player)) getType
 
         -- ****************************** GUI SETTINGS ******************************** --
 
@@ -498,55 +515,80 @@ getGameResult moves player = if isWin moves player
 isLoss :: [TMove] -> TPlay -> Bool
 isLoss moves player = isWin moves (switchPlayers player)
 
-choose :: [Maybe (Int, TMove)] -> TPlay -> Maybe (Int, TMove)
-choose [] _ = Nothing
-choose list player = case filteredList of
-
-    []      -> Nothing
-    (x:_)   -> let Just (_, headMove) = x
-                   comp = if getPlayer headMove == player then (>) else (<) in
-
-                   foldl (\acc curr -> let Just (scoreCurr, move) = curr
-                                           Just (scoreAcc, _) = acc in
-
-                                           if scoreCurr `comp` scoreAcc
-                                           then
-                                             curr
-                                           else
-                                             acc) x filteredList 
-
-  where filteredList = filter (/=Nothing) list
-
 data TGameResult = Win | Undefined | Loss deriving (Show, Eq)
 
 rate :: Int -> TGameResult -> Int
 rate level result = case result of
 
-  Win         -> 10
+  Win         -> 1
   Undefined   -> 0
-  Loss        -> (-10)
+  Loss        -> -1
 
-cutTree :: TGameState -> TGameState
-cutTree state = cutTreeStep state True
+cutTree :: TGameState -> (TGameState, [TMove])
+cutTree state = cutTreeStep state True []
 
-cutTreeStep :: TGameState -> Bool -> TGameState
-cutTreeStep state cutting = case state of
+cutTreeStep :: TGameState -> Bool -> [TMove] -> (TGameState, [TMove])
+cutTreeStep state cutting accMoves = case state of
 
-  Empty              -> Empty
-  Node move []       -> Node move []
-  Node move [node]   -> if cutting then cutTreeStep node True else (Node move [cutTreeStep node False])
-  Node move nodes    -> Node move (foldr (\node acc -> (cutTreeStep node False):acc) [] nodes)
+  Empty              -> (Empty, [])
+  Node move []       -> (Node move [], accMoves)
+  
+  Node move [node]   -> if cutting
+                        then
+                          cutTreeStep node True (move:accMoves)
+                        else
+                          let (nextState, _) = cutTreeStep node False accMoves in
+                              (Node move [nextState], accMoves)
+                              
+  Node move nodes    -> (Node move (foldr (\node acc -> let (newState, _) = cutTreeStep node False accMoves in
+                                                            newState:acc) [] nodes), accMoves)
 
-minimax :: TGameState -> Int -> Maybe (Int, TMove)
-minimax state difficulty = let decisionTree = cutTree $ generateDecisionTree state difficulty in
-                               case decisionTree of
-  Empty -> Nothing
-  Node (Dummy player) _     -> minimaxStep decisionTree 0 (switchPlayers player) []
-  Node (TMove _ player) _   -> minimaxStep decisionTree 0 player []
+findWithComp :: [(Int, TMove)] -> (Int -> Int -> Bool) -> Maybe (Int, TMove)
+findWithComp [] _ = Nothing
+findWithComp a@(x:xs) comp = Just $ foldr (\(currRating, currMove)
+                                            (accRating, accMove) -> if currRating `comp` accRating
+                                                                    then
+                                                                      (currRating, currMove)
+                                                                    else
+                                                                      (accRating, accMove)) x a
 
-minimaxStep :: TGameState -> Int -> TPlay -> [TMove] -> Maybe (Int, TMove)
-minimaxStep state currLevel player accMoves = case state of
+minimax :: TGameState -> TPlay -> Int -> Maybe TMove
+minimax state player difficulty = let (decisionTree, cutMoves) = cutTree
+                                                 $ generateDecisionTree state difficulty in
+                                                case decisionTree of
+     
+     Empty                 -> Nothing
+     Node _ []             -> Nothing
+     Node _ [node]         -> Nothing
+     
+     Node lastMove nodes   -> (\result -> Just $ snd result)
+                               =<< ((\array -> findWithComp array (>))
+                                 . map (\(Just x) -> x)
+                                 . filter (/=Nothing)
+                                 . map (\node -> let (Node move _) = node in
+                                                     minimaxStep node player 0 ((if isDummy lastMove
+                                                                                 then
+                                                                                   []
+                                                                                 else
+                                                                                   [lastMove])
+                                                                                  ++ cutMoves)
+                                                 >>= (\rate -> Just (rate, move)))
+                                 $ nodes)
 
-  Node move [] -> Just (rate currLevel $ getGameResult (move:accMoves) player, move)
-  Node move nodes -> (\res -> choose res player)
-                   $ foldr (\node acc -> (minimaxStep node (succ currLevel) player (move:accMoves)):acc) [] nodes
+findWithComp' :: [Maybe Int] -> (Int -> Int -> Bool) -> Maybe Int
+findWithComp' [] _ = Nothing
+findWithComp' list comp = case map (\(Just x) -> x) . filter (/=Nothing) $ list of
+              
+  []         -> Nothing
+  a@(x:xs)   -> Just $ foldr (\y acc -> if y `comp` acc then y else acc) x a
+
+minimaxStep :: TGameState -> TPlay -> Int -> [TMove] -> Maybe Int
+minimaxStep state player level accMoves = case state of
+
+   Empty             -> Nothing
+   
+   Node move []      -> Just $ rate level $ getGameResult (move:accMoves) player
+   
+   Node move nodes   -> (\array -> findWithComp' array (if getPlayer move == player then (<) else (>)))
+                      . map (\node -> minimaxStep node player (succ level) (move:accMoves))
+                      $ nodes
