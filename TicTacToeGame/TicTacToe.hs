@@ -19,9 +19,9 @@ main = do
     types <- getPlayerTypes
 
     programLoop (Just (Empty, PL1)) (\x -> case filter (\y -> let (pl, plT) = y in pl == x) types of
-                                                [] -> Nothing
-                                                [(_, z)] -> Just z
-                                                list -> Nothing)
+                                                []         -> Nothing
+                                                [(_, z)]   -> Just z
+                                                list       -> Nothing)
     
     showCursor
     clearScreen
@@ -36,8 +36,6 @@ programLoop package getType = case package of
   Just (state, player)   -> do
 
     drawAll
-    drawBox (screenPos gOrigin (PX1, PY1) gWidth gHeight gPaddingX gPaddingY)
-             gWidth gHeight gPaddingX gPaddingY False True
     drawSymbols state
 
     if isDraw state
@@ -62,7 +60,7 @@ programLoop package getType = case package of
 
                              Nothing -> do { putStrLn "Player type get fail."; y <- getLine; return Nothing }
                              Just Human   -> do
-
+                               logDown ((show player) ++ "'s turn. Use arrow keys to move, enter to select and escape to exit.") 0
                                decide <- waitForInput state player [] (PX1, PY1)
                                programLoop decide getType
 
