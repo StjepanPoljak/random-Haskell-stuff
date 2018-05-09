@@ -554,6 +554,7 @@ cutTreeStep state cutting accMoves = case state of
 
 findWithComp :: [(Int, TMove)] -> (Int -> Int -> Bool) -> Maybe (Int, TMove)
 findWithComp [] _ = Nothing
+findWithComp [x] _ = Just x
 findWithComp a@(x:xs) comp = Just $ foldr (\(currRating, currMove)
                                             (accRating, accMove) -> if currRating `comp` accRating
                                                                     then
@@ -567,7 +568,7 @@ minimax state player difficulty = let (decisionTree, cutMoves) = cutTree
                                                 case decisionTree of
      
      Empty                 -> Nothing
-     Node _ []             -> Nothing
+     Node onlyMove []      -> Just onlyMove
      Node _ [node]         -> Nothing
      
      Node lastMove nodes   -> (\result -> Just $ snd result)
@@ -589,6 +590,7 @@ findWithComp' [] _ = Nothing
 findWithComp' list comp = case map (\(Just x) -> x) . filter (/=Nothing) $ list of
               
   []         -> Nothing
+  [x]        -> Just x
   a@(x:xs)   -> Just $ foldr (\y acc -> if y `comp` acc then y else acc) x a
 
 minimaxStep :: TGameState -> TPlay -> Int -> [TMove] -> Maybe Int
