@@ -16,21 +16,6 @@ data Direction = NUp
                | NRight
                deriving (Eq, Show)
 
-gWidth :: Int
-gWidth = 5
-
-gHeight :: Int
-gHeight = 5
-
-gWall :: [NodeCoord]
-gWall = [(2,2), (3,2), (0,2), (4, 2)]
-
-gStart :: NodeCoord
-gStart = (4,0)
-
-gEnd :: NodeCoord
-gEnd = (2,4)
-
 main :: IO ()
 main = do
   args <- getArgs
@@ -74,9 +59,6 @@ createGraphR (l:ls) partial (w, h) (x, y)
 
 createGraphS :: String -> Graph
 createGraphS string = createGraphR string ([], 0, 0, (0, 0), (0, 0)) (0, 0) (0, 0)
-
-createGraph :: Int -> Int -> NodeCoord -> NodeCoord -> [NodeCoord] -> Graph
-createGraph width height start end wall = (wall, width, height, start, end)
 
 directionToNodeCoord :: Direction -> NodeCoord
 directionToNodeCoord direction = case direction of
@@ -186,8 +168,3 @@ drawStep graph res node
 drawGraphWithResult :: Graph -> Maybe Result -> IO ()
 drawGraphWithResult graph Nothing = drawGraphWithResult graph (Just ([], 0, False))
 drawGraphWithResult graph (Just res) = drawStep graph res (0, 0)
-
-floodM :: State Graph (Maybe Result)
-floodM = do
-  graph <- get
-  return Nothing
