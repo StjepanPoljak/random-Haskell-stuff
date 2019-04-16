@@ -1,4 +1,3 @@
-import Control.Monad.State
 import System.Environment
 
 type NodeCoord = (Int, Int)
@@ -48,7 +47,7 @@ isEmpty [] = True
 isEmpty _ = False
 
 createGraphR :: String -> Graph -> (Int, Int) -> NodeCoord -> Graph
-createGraphR [] partial (_, h) _ = partial
+createGraphR [] partial (_, _) _ = partial
 createGraphR (l:ls) partial (w, h) (x, y)
   | l == '#'     = createGraphR ls (addWallToGraph partial (x, y)) (w + 1, h) (x + 1, y)
   | l == '\n'    = createGraphR ls (setGraphHeight (setGraphWidth partial w) ((getHeight partial) + 1)) (0, h + 1) (0, y + 1)
@@ -127,6 +126,7 @@ floodR graph = floodR' graph ([], 0, False)
 floodR' :: Graph -> Result -> Maybe Result
 floodR' graph (path, len, True) = Just (path, len, True)
 floodR' graph res = safeRes
+                  . getMinPaths
                   . filter (\(path, len, state) -> state)
                   . map (\(Just x) -> x)
                   . filter (\next -> case next of
